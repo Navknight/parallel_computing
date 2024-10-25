@@ -11,10 +11,9 @@ with open(filename, 'r') as file:
     for line in file:
         # Extract data from each line
         if "Num Threads:" in line and "Total Time:" in line:
-            parts = line.strip().split(",")
-            # Get number of threads and time
-            threads = int(parts[0].split(":")[1].strip())
-            time = float(parts[1].split(":")[1].strip().split()[0])
+            # Split based on the pattern in your file
+            threads = int(line.split("Num Threads:")[1].split(",")[0].strip())
+            time = float(line.split("Total Time:")[1].strip().split()[0])
             num_threads.append(threads)
             times.append(time)
 
@@ -36,13 +35,19 @@ plt.grid(True)
 min_time_idx = times.index(min(times))
 plt.scatter(num_threads[min_time_idx], times[min_time_idx], color='r', zorder=5, label=f'Best Time: {times[min_time_idx]:.2f}s')
 
+# Add a vertical dotted line from the best time down to the x-axis
+plt.axvline(x=num_threads[min_time_idx], color='r', linestyle='--', label=f'{num_threads[min_time_idx]} Threads', ymax=0.9)
+
+# Explicitly set the x-ticks to powers of 2 from 1 to 20 (1, 2, 4, 8, 16, 20)
+plt.xticks([1, 2, 4, 8, 10, 12, 14, 16, 18, 20])
+
 plt.legend()
 
 # Show the plot
 plt.tight_layout()
 
 # Save the plot
-plt.savefig('pagerank_performance.png')  # Save as PNG, you can change extension
+plt.savefig('perf.png')  # Save as PNG
 
 # Optionally display the plot
 plt.show()

@@ -64,6 +64,7 @@ void Read_Graph(char *filename, int mode)
     ri = (double *)malloc(N * sizeof(double));
     rj = (double *)malloc(N * sizeof(double));
 
+    // Initialize rank vectors: ri starts as all zeros, rj is 1/N for all nodes
 #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < N; i++)
     {
@@ -77,6 +78,7 @@ double diff()
 {
     double sum = 0;
 
+    // Parallel reduction to compute the total difference between ri and rj
 #pragma omp parallel for num_threads(threads) reduction(+ : sum)
     for (int i = 0; i < N; i++)
     {
@@ -87,12 +89,12 @@ double diff()
 
 int main(int argc, char **argv)
 {
-    const char *filename = "./soc-Stanford.txt";
-    N = 281903;
-    threshold = 0.0001;
-    d = 0.85;
-    threads = 1;
-    int mode = 1;
+    const char *filename = "./soc-Stanford.txt"; // Input file name
+    N = 281903;           // Number of nodes
+    threshold = 0.0001;    // Convergence threshold
+    d = 0.85;              // Damping factor for PageRank
+    threads = 1;           // Default number of threads
+    int mode = 1;          // Mode for reading input graph (0 = edgelist, 1 = txt)
 
     // Override default parameters with command-line arguments
     if (argc >= 2)
@@ -110,8 +112,10 @@ int main(int argc, char **argv)
 
     printf("Filename = %s, Threshold = %f, Damping Factor = %f, Threads = %d\n", filename, threshold, d, threads);
 
+    // Allocate memory for the graph nodes
     Nodes = new Node[N];
 
+    // Initialize the node data
 #pragma omp parallel for num_threads(threads)
     for (int i = 0; i < N; i++)
     {
@@ -119,30 +123,42 @@ int main(int argc, char **argv)
         Nodes[i].to = new int[1];
     }
 
+    // Read the graph from the input file
     Read_Graph((char *)filename, mode);
 
     int iterations = 0;
-    double error = 1;
+    double error = 1;  // Initialize error for convergence loop
 
     // Loop until the error is below the threshold
     while (error > threshold)
     {
-        auto start = chrono::high_resolution_clock::now();
+        auto start = chrono::high_resolution_clock::now();  // Start timer for iteration
 
+        // Swap ri and rj to start the next iteration
         swap(ri, rj);
-        fill(rj, rj + N, 0.0);
+        fill(rj, rj + N, 0.0);  // Reset rj for new values
+
+        // PageRank formula:
+        // rj[node] += d * ri[i] / Nodes[i].outd
+        // where:
+        // - d is the damping factor
+        // - ri[i] is the rank of node i in the previous iteration
+        // - Nodes[i].outd is the out-degree of node i
+        // This computes the portion of node i's rank distributed to node j
 
 #pragma omp parallel for num_threads(threads) schedule(dynamic)
         for (int i = 0; i < N; i++)
         {
             for (int j = 0; j < Nodes[i].outd; j++)
             {
-                int node = Nodes[i].to[j];
+                int node = Nodes[i].to[j];  // Get the node to which i points
 #pragma omp atomic
                 rj[node] += d * ri[i] / Nodes[i].outd;
             }
         }
 
+        // Handling dangling nodes and teleportation effect
+        // s represents the leftover rank that should be evenly distributed among all nodes
         double s = 1.0;
 
 #pragma omp parallel for num_threads(threads) reduction(- : s)
@@ -150,27 +166,30 @@ int main(int argc, char **argv)
         {
             s -= rj[i];
         }
-        s /= N;
+        s /= N;  // Distribute the leftover rank evenly across all nodes
 
 #pragma omp parallel for num_threads(threads)
         for (int i = 0; i < N; i++)
         {
-            rj[i] += s;
+            rj[i] += s;  // Adjust rj values with the leftover rank
         }
 
+        // Compute the error for this iteration (difference between ri and rj)
         error = diff();
         iterations++;
 
-        auto end = chrono::high_resolution_clock::now();
+        auto end = chrono::high_resolution_clock::now();  // End timer for iteration
         auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
-        times.push_back(duration.count() / 1e6);
+        times.push_back(duration.count() / 1e6);  // Store the time taken for this iteration
 
         printf("Iteration %d, Error = %f, Time = %f\n", iterations, error, times.back());
     }
 
+    // Calculate total time spent on all iterations
     double total_time = accumulate(times.begin(), times.end(), 0.0);
     printf("Total Time = %f\n", total_time);
 
+    // Free allocated memory
     for (int i = 0; i < N; i++)
     {
         delete[] Nodes[i].to;
